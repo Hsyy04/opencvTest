@@ -21,57 +21,7 @@ class Dictionary:
         fx = 0.5*(1/segLenth)*torch.sum(torch.linalg.norm(Tf, axis = 1)*torch.linalg.norm(Tf, axis = 1))
         gx = self.l * torch.sum(torch.linalg.norm(A, axis = 1)*torch.linalg.norm(A, axis = 1))
         return fx+gx
-
-    # def reduceDict(self, X, lr=1.0):
-    #     # 使用这个sb的减梯度，根本收敛不下去， 还必须把二范数平方改为二范数
-    #     s = X.shape[0]
-    #     d = self.D.shape[0]
-    #     A = torch.rand((s,d),requires_grad=True)
-    #     # 优化只会减梯度
-    #     for i in range(20):
-    #         error = self.getError(X, A)
-    #         error.backward()
-    #         A.data.add_(A.grad, alpha=-lr)
-    #         A.grad = None
-
-    #     A.requires_grad = False
-    #     return A, self.getError(X, A)
-
-
         
-
-    # def updateDict(self, X, lr=1.0):
-    #     m = len(X)
-    #     self.D.requires_grad = True
-    #     for i in range(10):
-    #         error = 0.0
-    #         self.D.data.grad = None
-    #         for (x, a) in enumerate(X):
-    #             error = error + 1/float(m) * self.getError(x, a)
-    #         error += self.gamma* torch.sum(torch.linalg.norm(self.D, axis = 1))
-    #         error.backward()
-    #         self.D.data.add_(self.D.grad, alpha=-lr)
-    #     self.D.requires_grad = False
-
-    # def initDict(self, X, lr=1.0):
-    #     A_set = []
-    #     m = len(X)
-    #     for x in X:
-    #         A, _ = self.reduceDict(x,0.1)
-    #         A_set.append(A)
-    #     self.D.requires_grad = True
-    #     for i in range(20):
-    #         error = 0.0
-    #         self.D.data.grad = None
-    #         for (i, x) in enumerate(X):
-    #             error = error + 1/float(m) * self.getError(x, A_set[i])
-    #         print(f"reduce each A: {error}")
-    #         error += self.gamma* torch.sum(torch.linalg.norm(self.D, axis = 1))
-    #         error.backward()
-    #         print(error)
-    #         self.D.data.add_(self.D.grad, alpha=-lr)
-    #     self.D.requires_grad = False
-
     def reduceDict(self, X, lr=1.0):
         DT = self.D.transpose(0,1)
         s = X.shape[0]
