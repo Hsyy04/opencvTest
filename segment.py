@@ -1,3 +1,4 @@
+from typing import List
 import cv2
 import numpy as np
 from c3d_feature import C3D_feature
@@ -6,7 +7,7 @@ import torchvision
 
 class segment:
     def __init__(self, frames) -> None:
-        assert len(frames)>=16
+        # assert len(frames)>=16
         self.frames = frames
         self.hogFeature = []
         self.clearFeature = []
@@ -14,6 +15,7 @@ class segment:
             self.hogFeature.append(getHogFeature(fr))
             self.clearFeature.append(getClearFeature(fr))
         self.hogFeature = np.array(self.hogFeature)
+        self.hogFeature = np.average(self.hogFeature, axis=1)
         self.clearFeature = np.array(self.clearFeature).mean()
 
         # model = C3D_feature().eval()

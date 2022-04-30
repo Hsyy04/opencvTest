@@ -219,54 +219,66 @@ class hog_diff_dist:
         analyze_thread = None
         front = None
         seg = None
+
+        # 使用光流分段
+        ret, old_frame = cap.read()
+        old_gray = cv2.cvtColor(old_frame, cv2.COLOR_BGR2GRAY)
+        p0 = cv2.goodFeaturesToTrack(old_gray, mask = None, **feature_params)
+
         while True:
             ret, frame = self.cap.read()
+            frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
             if ret == False: 
                 break
+
             if analyze_thread!=None and analyze_thread.is_alive():
                 print(f"drop frame!{ana_cnt}---{cv2.CAP_PROP_POS_FRAMES}")
                 continue
+
             frame_cnt+=1
             tem_segment.append(frame)
-            if frame_cnt % self.fps == 0:
+
+            p1, st, err = cv2.calcOpticalFlowPyrLK(old_gray, frame_gray, p0, None, **lk_params)
+
+            if (st is None) or (len(st)<10) :
+                print(f"this segment has{len(tem_segment)} frames")
                 ana_cnt +=1
                 front = seg 
-                # s = time.time()
                 seg = segment(tem_segment.copy())
-                # e = time.time()
-                # print(f"cal_feature: {e-s}")
+
                 if seg.clearFeature < 2500:
                     tem_segment.clear()
                     continue
                 analyze_thread = analyzer_thread(self.HOG_diff_dist, seg)
                 analyze_thread.start()
-
-                # debug
-                # clear.append(seg.clearFeature)
-                # if frame_cnt != self.fps:
-                #     point.append(seg.hog_dist(front))
-                #     time_pt.append(cap.get(cv2.CAP_PROP_POS_MSEC)/1000.0)
-                # end bug
-
                 tem_segment.clear()
+                # 重建光流
+                p0 = cv2.goodFeaturesToTrack(frame_gray, mask = None, **feature_params)
+                old_gray = frame_gray.copy()
+                st.clear()
+            else:
+                # 光流迭代
+                good_new = p1[st==1]
+                old_gray = frame_gray.copy()
+                p0 = good_new.reshape(-1,1,2)
             
             if frame_cnt % 300 == 0:
-                # # debug
-                # while(analyze_thread.is_alive()):pass
-                # save = []
-                # for s in self.summary:
-                #     save.extend(s.frames)
-                # saveVideo(save, FPS, SIZE, f"{frame_cnt}_{self.cap.get(cv2.CAP_PROP_FRAME_COUNT)}")
-                # # end bug
-
                 print(f"{frame_cnt}/{self.cap.get(cv2.CAP_PROP_FRAME_COUNT)}")
 
         return self.summary
 
 FPS = 16.0
-TIME = 30
+TIME = 20
 SIZE = (480,720)
 PATH = "video/test1.mp4"
+lk_params = dict( winSize  = (15,15),
+                  maxLevel = 2,
+                  criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+feature_params = dict( maxCorners = 100,
+                       qualityLevel = 0.3,
+                       minDistance = 1,
+                       blockSize = 7 )
 
 cap = cv2.VideoCapture(PATH)
 cap.set(cv2.CAP_PROP_FPS, FPS)
