@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 import time
 
-PATH = "video/hog_diff_clear2022_04_12_19_44_17.mp4"
+PATH = "video/test1.mp4"
 
 cap = cv2.VideoCapture(PATH)
 t = time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime())
@@ -33,6 +33,8 @@ p0 = cv2.goodFeaturesToTrack(old_gray, mask = None, **feature_params)
 # 创建一个蒙版用来画轨迹
 mask = np.zeros_like(old_frame)
 
+clip_cnt = 0
+
 while(1):
     ret,frame = cap.read()
     if ret == False:
@@ -42,8 +44,10 @@ while(1):
     # 计算光流
     p1, st, err = cv2.calcOpticalFlowPyrLK(old_gray, frame_gray, p0, None, **lk_params)
     if (st is None) or (len(st)<10):
+        # 重建光流
         p0 = cv2.goodFeaturesToTrack(frame_gray, mask = None, **feature_params)
         mask = np.zeros_like(old_frame)
+        clip_cnt+=1
         continue
     # 选取好的跟踪点
     good_new = p1[st==1]
@@ -69,3 +73,4 @@ while(1):
 
 cap.release()
 out.release()
+print(clip_cnt)
