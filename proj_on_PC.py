@@ -9,14 +9,32 @@ from matplotlib import pyplot as plt
 
 from paddle import save
 import numpy as np
-
+import math
 from tensorboard import summary
 import sys
-from segment import segment
+from segment import segment, Frame
 
 point = [100.0]
 time_pt = []
 clear = []
+
+class Clarity_Filter:
+    def __init__(self, time: float) -> None:
+        self.time = time
+        self.threshold = 0
+        self.decay = 0.9
+
+    def __call__(self, seg:segment, time: float) -> bool:
+        dt = abs(time - self.time)
+        self.threshold *= math.pow(self.decay, dt)
+        self.time = time
+
+        c = seg.clear
+        if c >= self.threshold:
+            self.threshold = c
+            return True
+        else:
+            return False
 
 class analyzer_thread(Thread):
     def __init__(self, func, args=()):
@@ -60,110 +78,16 @@ def saveVideo(summary, fps, size, type):
         out.write(cv2.resize(fr, size))
     out.release()
 
-class hog_whole_dist:
-    def __init__(self, cap, fps, time) -> None:
-        self.summary = []
-        self.cap = cap
-        self.fps = fps
-        self.time = time
-        self.bestdist = None
-
-    def HOG_whole_dist(self, now_segment:segment):
-        if len(self.summary) < self.time:
-        # 为了防止摘要什么都没有，开始的片段直接加进来
-            self.summary.append(now_segment)
-        else:
-            if self.bestdist == None:
-                self.bestdist = 0.0
-                for i, seg in enumerate(self.summary):
-                    for j in range(i+1, len(self.summary)):
-                        self.bestdist+= seg.hog_dist(self.summary[j])
-                        # print(f"init_dist:{seg.hog_dist(self.summary[j])}")
-                self.bestdist /= self.time*(self.time-1)
-            # 是否重复
-            last = self.summary[len(self.summary)-1]
-            testdist = now_segment.hog_dist(last)
-            # print(f"test_dist:{testdist}")
-
-            if testdist/2.0 < 2000.0:
-                if now_segment.clearFeature > last.clearFeature:
-                    self.summary.pop()
-                    self.summary.append(now_segment)
-                    # update best
-                    self.bestdist = 0.0
-                    for i, seg in enumerate(self.summary):
-                        for j in range(i+1, len(self.summary)):
-                            self.bestdist+= seg.hog_dist(self.summary[j])
-                            # print(f"init_dist:{seg.hog_dist(self.summary[j])}")
-                    self.bestdist /= self.time*(self.time-1)
-                return 
-            # 找替换后最好的
-            k_frame = -1
-            for k in range(len(self.summary)):
-                tem_dist = 0.0
-                for i in range(len(self.summary)):
-                    for j in range(i+1, len(self.summary)):
-                        if i == k:
-                            tem_dist+=self.summary[j].hog_dist(now_segment)
-                        elif j == k:
-                            tem_dist+=self.summary[i].hog_dist(now_segment)
-                        else:
-                            tem_dist+=self.summary[i].hog_dist(self.summary[j])
-                tem_dist /= self.time*(self.time-1)
-                # print(f"segment:{k}, dist:{tem_dist}, best_dist:{self.bestdist}")
-                if tem_dist > self.bestdist:
-                    k_frame = k
-                    self.bestdist = tem_dist
-            # 替换
-            if k_frame != -1:
-                self.summary.pop(k_frame)
-                self.summary.append(now_segment)
-
-    def getSimple1(self):
-        frame_cnt = 0
-        tem_segment = []
-        ana_cnt = 0
-        analyze_thread = None
-        front = None
-        seg = None
-        while True:
-            ret, frame = self.cap.read()
-            if ret == False: 
-                break
-            if analyze_thread!=None and analyze_thread.is_alive():
-                print(f"drop frame!{ana_cnt}---{cv2.CAP_PROP_POS_FRAMES}")
-                continue
-            frame_cnt+=1
-            tem_segment.append(frame)
-            if frame_cnt % self.fps == 0:
-                ana_cnt +=1
-                front = seg 
-                seg = segment(tem_segment.copy())
-                if seg.clearFeature < 2500:
-                    tem_segment.clear()
-                    continue
-                analyze_thread = analyzer_thread(self.HOG_whole_dist, seg)
-                analyze_thread.start()
-                if frame_cnt != self.fps:
-                    point.append(seg.hog_dist(front))
-                    time_pt.append(cap.get(cv2.CAP_PROP_POS_MSEC)/1000.0)
-                tem_segment.clear()
-            
-            if frame_cnt % 300 == 0:
-                sys.stderr.write(f"{frame_cnt}/{cap.get(cv2.CAP_PROP_FRAME_COUNT)}")
-
-        return self.summary
-
 class hog_diff_dist:
     def __init__(self, cap, fps, time) -> None:
-        self.summary = []
+        self.summary:list[segment] = []
         self.cap = cap
         self.fps = fps
         self.time = time
         self.bestdist = None
 
     def HOG_diff_dist(self, now_segment:segment):
-        if len(self.summary) < self.time:
+        if len(self.summary) < self.time*3:
         # 为了防止摘要什么都没有，开始的片段直接加进来
             self.summary.append(now_segment)
         else:
@@ -175,10 +99,11 @@ class hog_diff_dist:
             # 是否重复
             last = self.summary[len(self.summary)-1]
             testdist = now_segment.hog_dist(last)
+            
             # print(f"test_dist:{testdist}; bset: {self.bestdist}")
 
             if testdist < self.bestdist:
-                if now_segment.clearFeature > last.clearFeature:
+                if now_segment.clear > last.clear:
                     self.summary.pop()
                     self.summary.append(now_segment)
                     # update best
@@ -212,7 +137,7 @@ class hog_diff_dist:
                 self.summary.pop(k_frame)
                 self.summary.append(now_segment)
 
-    def getSimple1(self):
+    def getSimple(self, usedLK = False):
         frame_cnt = 0
         tem_segment = []
         ana_cnt = 0
@@ -221,57 +146,94 @@ class hog_diff_dist:
         seg = None
 
         # 使用光流分段
-        ret, old_frame = cap.read()
-        old_gray = cv2.cvtColor(old_frame, cv2.COLOR_BGR2GRAY)
-        p0 = cv2.goodFeaturesToTrack(old_gray, mask = None, **feature_params)
+        if usedLK:
+            ret, old_frame = cap.read()
+            old_gray = cv2.cvtColor(old_frame, cv2.COLOR_BGR2GRAY)
+            p0 = cv2.goodFeaturesToTrack(old_gray, mask = None, **feature_params)
 
         while True:
-            ret, frame = self.cap.read()
-            frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-            if ret == False: 
+            ret, frame = self.cap.read()  # 获取当前帧
+            if ret == False:   # 视频结束
                 break
+            frame_gray = cv2.cvtColor(frame.copy(), cv2.COLOR_BGR2GRAY)
 
-            if analyze_thread!=None and analyze_thread.is_alive():
+            if analyze_thread!=None and analyze_thread.is_alive():  # 如果还在计算，那么得不到这一帧
                 print(f"drop frame!{ana_cnt}---{cv2.CAP_PROP_POS_FRAMES}")
                 continue
+            
+            # 帧计数，以及换存
+            frame_cnt+=1   
+            tem_segment.append(Frame(frame))
 
-            frame_cnt+=1
-            tem_segment.append(frame)
-
-            p1, st, err = cv2.calcOpticalFlowPyrLK(old_gray, frame_gray, p0, None, **lk_params)
-
-            if (st is None) or (len(st)<10) :
+            # 计算新帧的光流， 如果光流需要重置， 就分段
+            isClip = False
+            if usedLK:
+                p1, st, err = cv2.calcOpticalFlowPyrLK(old_gray, frame_gray, p0, None, **lk_params)
+                isClip = (st is None) or (len(st)<10)
+            else: 
+                isClip = (frame_cnt % self.fps==0)
+            if isClip :
                 print(f"this segment has{len(tem_segment)} frames")
                 ana_cnt +=1
-                front = seg 
                 seg = segment(tem_segment.copy())
 
-                if seg.clearFeature < 2500:
+                # 重建光流
+                if usedLK:
+                    p0 = cv2.goodFeaturesToTrack(frame_gray, mask = None, **feature_params)
+                    old_gray = frame_gray.copy()
+
+                if Clarity_Filter(seg) == False:
+                    print(f"These are so moving!")
                     tem_segment.clear()
                     continue
                 analyze_thread = analyzer_thread(self.HOG_diff_dist, seg)
                 analyze_thread.start()
                 tem_segment.clear()
-                # 重建光流
-                p0 = cv2.goodFeaturesToTrack(frame_gray, mask = None, **feature_params)
-                old_gray = frame_gray.copy()
-                st.clear()
             else:
                 # 光流迭代
-                good_new = p1[st==1]
-                old_gray = frame_gray.copy()
-                p0 = good_new.reshape(-1,1,2)
+                if usedLK:
+                    good_new = p1[st==1]
+                    old_gray = frame_gray.copy()
+                    p0 = good_new.reshape(-1,1,2)
             
             if frame_cnt % 300 == 0:
                 print(f"{frame_cnt}/{self.cap.get(cv2.CAP_PROP_FRAME_COUNT)}")
 
         return self.summary
 
+    def aestheticsChosen(self):
+        # config
+        nSegment = self.time*3
+        nFrame = self.time * self.fps
+        
+
+        ret = []
+        all_frame:list[Frame] = []
+        for fr in self.summary:
+            all_frame.extend(fr.frames)
+        for i,f in enumerate(all_frame): f.pos = i
+        all_frame.sort(key = lambda x:x.color_score+x.symmetry_score, reverse=True)
+        # 
+        cntChosen = 0
+        cntBeauty = [0 for i in range(nSegment)]
+        for f in all_frame:
+            if(cntChosen >=nFrame ):
+                break
+            else:
+                nowSeg = f.pos/int(self.fps)
+                if cntBeauty[nowSeg] == -1: continue
+                cntBeauty[nowSeg]+=1
+                if cntBeauty[nowSeg] >= self.fps/4:
+                    ret.append(summary[nowSeg])
+                    cntChosen += self.fps
+                    cntBeauty[nowSeg] = -1
+        assert cntChosen == nFrame
+        return ret
+
 FPS = 16.0
-TIME = 20
+TIME = 10
 SIZE = (480,720)
-PATH = "video/test1.mp4"
+PATH = "video/test3.mp4"
 lk_params = dict( winSize  = (15,15),
                   maxLevel = 2,
                   criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
@@ -282,19 +244,22 @@ feature_params = dict( maxCorners = 100,
 
 cap = cv2.VideoCapture(PATH)
 cap.set(cv2.CAP_PROP_FPS, FPS)
-print(f"time:{cap.get(cv2.CAP_PROP_FRAME_COUNT)/15.0}")
+print(f"time:{cap.get(cv2.CAP_PROP_FRAME_COUNT)/FPS}")
 
 print("calculating")
 ana = hog_diff_dist(cap, FPS, TIME)
-summary = ana.getSimple1()
+summary = ana.getSimple()
+save = []
+for s in summary:
+    save.extend(s.frames)
+saveVideo(save, FPS, SIZE, "first_stage")
 
-
+summary = ana.aestheticsChosen()
 print("saving")
 save = []
 for s in summary:
     save.extend(s.frames)
-
-saveVideo(save, FPS, SIZE, "hog_whole_clear")
+saveVideo(save, FPS, SIZE, "second_stage")
 
 # # save rand
 # rand = getRand(FPS, TIME, cap)

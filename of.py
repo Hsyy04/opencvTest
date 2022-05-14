@@ -1,8 +1,15 @@
+from matplotlib.cbook import maxdict
 import numpy as np
 import cv2
 import time
 
-PATH = "video/test1.mp4"
+from numpy import clip
+
+from numpy import zeros_like
+from matplotlib import pyplot as plt
+from segment import segment,Frame
+
+PATH = "video/vlog02.mp4"
 
 cap = cv2.VideoCapture(PATH)
 t = time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime())
@@ -34,20 +41,31 @@ p0 = cv2.goodFeaturesToTrack(old_gray, mask = None, **feature_params)
 mask = np.zeros_like(old_frame)
 
 clip_cnt = 0
+clips = []
+v_list = []
+buffer = []
 
 while(1):
     ret,frame = cap.read()
     if ret == False:
         break
+    buffer.append(Frame(frame))
     frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
     # 计算光流
     p1, st, err = cv2.calcOpticalFlowPyrLK(old_gray, frame_gray, p0, None, **lk_params)
-    if (st is None) or (len(st)<10):
+    if (st is None) or (len(st)<1):
         # 重建光流
         p0 = cv2.goodFeaturesToTrack(frame_gray, mask = None, **feature_params)
         mask = np.zeros_like(old_frame)
         clip_cnt+=1
+        old_gray = frame_gray.copy()
+        out.write(cv2.resize(frame, (480,720)))
+        # 分段
+        clips.append(segment(buffer))
+        buffer.clear()
+        # for _ in range(20):
+        #     out.write(cv2.resize(frame, (480,720)))
         continue
     # 选取好的跟踪点
     good_new = p1[st==1]
@@ -61,11 +79,11 @@ while(1):
         dis = (a-c)*(a-c)+(b-d)*(b-d)
         max_dist = max(dis, max_dist)
         mask = cv2.line(mask, (int(a),int(b)),(int(c),int(d)), color[i].tolist(), 2)
-        frame = cv2.circle(frame,(int(a),int(b)),5,color[i].tolist(),-1)
+        frame = cv2.circle(frame,(int(a),int(b)),4,color[i].tolist(),-1)
     img = cv2.add(frame,mask)
     cv2.putText(img, str(max_dist), (140, 150), cv2.FONT_HERSHEY_PLAIN, 6.0, (0, 0, 255), 6)
-    if max_dist<1500.0:
-        out.write(cv2.resize(img, (480,720)))
+    out.write(cv2.resize(frame, (480,720)))
+    v_list.append(max_dist)
 
     # 更新上一帧的图像和追踪点
     old_gray = frame_gray.copy()
@@ -74,3 +92,8 @@ while(1):
 cap.release()
 out.release()
 print(clip_cnt)
+print(clips)
+
+for cp in clips:
+    print(cp.score1)
+    print(cp.score2)
