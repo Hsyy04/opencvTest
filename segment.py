@@ -12,7 +12,7 @@ def get_simi(f1, f2):
     return torch.cosine_similarity(torch.from_numpy(f1),torch.from_numpy(f2), dim=0)
 
 class Frame:
-    def __init__(self, frame:cv2.Mat) -> None:
+    def __init__(self, frame:cv2.Mat, idx=-1) -> None:
         self.frame = frame
         self.clear_score = self.getClearFeature(frame)
         # print(f"clear: {self.clear_score}")
@@ -25,6 +25,7 @@ class Frame:
         # print(f"color: {self.color_score}")
         self.pos = 0            # For aesthetic：最终摘要中的第几帧
         self.belongWhichSegment = 0         # For aesthetic: 属于第几个片段
+        self.raw_id = idx # 原始视频中的第几帧，用于实验评分
 
     def getSymmetry(self, img:cv2.Mat, code:int):
         img_cal = cv2.resize(img,(270,480))

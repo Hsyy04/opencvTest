@@ -1,4 +1,5 @@
 from concurrent.futures import thread
+from distutils.log import debug
 import enum
 from threading import Thread
 from turtle import color
@@ -113,7 +114,7 @@ class hog_diff_dist:
             testdist = now_segment.hog_dist(last)
             
 
-            print(f"test_dist:{testdist}; bset: {self.bestdist}")
+            # print(f"test_dist:{testdist}; bset: {self.bestdist}")
             if testdist < self.threshold:
                 if usedDacy ==True : self.threshold*=0.9
                 return 
@@ -143,7 +144,7 @@ class hog_diff_dist:
                 self.summary.pop(k_frame)
                 self.summary.append(now_segment)
 
-    def getSimple(self, usedLK = False, usedDecay = False):
+    def getSimple(self, debug=False, usedLK = False, usedDecay = False):
         frame_cnt = 0
         tem_segment = []
         ana_cnt = 0
@@ -164,12 +165,16 @@ class hog_diff_dist:
             frame_gray = cv2.cvtColor(frame.copy(), cv2.COLOR_BGR2GRAY)
 
             if analyze_thread!=None and analyze_thread.is_alive():  # 如果还在计算，那么得不到这一帧
-                print(f"drop frame!{ana_cnt}---{cv2.CAP_PROP_POS_FRAMES}")
+                print(f"drop frame!{ana_cnt}---{cap.get(cv2.CAP_PROP_POS_FRAMES)}")
                 continue
             
             # 帧计数，以及换存
-            frame_cnt+=1   
-            tem_segment.append(Frame(frame))
+            frame_cnt+=1
+            if debug:   
+                tem_segment.append(Frame(frame,idx=frame_cnt))
+            else: 
+                tem_segment.append(Frame(frame))
+
 
             # 计算新帧的光流， 如果光流需要重置， 就分段
             isClip = False
@@ -179,7 +184,7 @@ class hog_diff_dist:
             else: 
                 isClip = (frame_cnt % (self.fps*self.segmetLength)==0)
             if isClip :
-                print(f"this segment has{len(tem_segment)} frames")
+                # print(f"this segment has{len(tem_segment)} frames")
                 ana_cnt +=1
                 seg = segment(tem_segment.copy())
 
@@ -202,7 +207,7 @@ class hog_diff_dist:
                     old_gray = frame_gray.copy()
                     p0 = good_new.reshape(-1,1,2)
             
-            if frame_cnt % 100 == 0:
+            if frame_cnt % 1000 == 0 :
                 print(f"{frame_cnt}/{self.cap.get(cv2.CAP_PROP_FRAME_COUNT)}")
 
         return self.summary
@@ -225,10 +230,10 @@ class hog_diff_dist:
         cntBeauty = [0 for i in range(nSegment)]
         retId = []
         for f in all_frame:
-            print(f"score:{f.color_score};{f.symmetry_score}\t seg:{f.belongWhichSegment}")
+            # print(f"score:{f.color_score};{f.symmetry_score}\t seg:{f.belongWhichSegment}")
             if(cntChosen>=nFrame ):
-                # break
-                continue
+                break
+                # continue
             else:
                 nowSeg = f.belongWhichSegment
                 if cntBeauty[nowSeg] == -1: continue
@@ -243,7 +248,7 @@ class hog_diff_dist:
         return ret
 
 FPS = 16.0
-TIME = 10       # 总时间
+TIME = 2       # 镜头时间
 SIZE = (480,720)
 SegCnt = 5      # 镜头个数
 PATH = "video/test3.mp4"
@@ -254,29 +259,30 @@ feature_params = dict( maxCorners = 100,
                        qualityLevel = 0.3,
                        minDistance = 1,
                        blockSize = 7 )
+if __name__ == "__main__":
 
-cap = cv2.VideoCapture(PATH)
-cap.set(cv2.CAP_PROP_FPS, FPS)
-print(f"time:{cap.get(cv2.CAP_PROP_FRAME_COUNT)/FPS}")
+    cap = cv2.VideoCapture(PATH)
+    cap.set(cv2.CAP_PROP_FPS, FPS)
+    print(f"time:{cap.get(cv2.CAP_PROP_FRAME_COUNT)/FPS}")
 
-print("calculating")
-ana = hog_diff_dist(cap, FPS, TIME, SegCnt)
-summary = ana.getSimple()
-save = []
-for s in summary:
-    save.extend(s.frames)
-saveVideo(save, FPS, SIZE, "first_stage")
+    print("calculating")
+    ana = hog_diff_dist(cap, FPS, TIME*SegCnt, SegCnt)
+    summary = ana.getSimple()
+    save = []
+    for s in summary:
+        save.extend(s.frames)
+    saveVideo(save, FPS, SIZE, "first_stage")
 
-summary = ana.aestheticsChosen()
-print("saving")
-save = []
-for s in summary:
-    save.extend(s.frames)
-saveVideo(save, FPS, SIZE, "second_stage")
+    summary = ana.aestheticsChosen()
+    print("saving")
+    save = []
+    for s in summary:
+        save.extend(s.frames)
+    saveVideo(save, FPS, SIZE, "second_stage")
 
-# # save rand
-# rand = getRand(FPS, TIME, cap)
-# saveVideo(rand, FPS, SIZE, "rand")
+    # # save rand
+    # rand = getRand(FPS, TIME, cap)
+    # saveVideo(rand, FPS, SIZE, "rand")
 
-print("closing...")
-cap.release()
+    print("closing...")
+    cap.release()
