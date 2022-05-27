@@ -1,4 +1,3 @@
-from typing import List
 import cv2
 import numpy as np
 from c3d_feature import C3D_feature
@@ -83,7 +82,7 @@ class Frame:
         return hist
 
 class segment:
-    def __init__(self, frames:list[Frame]) -> None:
+    def __init__(self, frames) -> None:
         # assert len(frames)>=16
         self.totDate:list[Frame] = frames
         self.frames = []

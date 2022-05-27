@@ -20,22 +20,27 @@ def randomSummary(videoName, partion):
     summary_selections=list(map(lambda q: (round(q[0]) if (q >= np.percentile(list(summary_selections),100-partion*100)) else 0),summary_selections))
     return summary_selections
 
-def fovlogSummary(videoName):
+def fovlogSummary(videoName, ratio = -1):
 
     gt_file=HOMEDATA+'/'+videoName+'.mat'
     gt_data = scipy.io.loadmat(gt_file)
     nFrames=gt_data.get('nFrames')
-
     FPS = 16.0
     TIME = 2       # 镜头时间
-    SIZE = (480,720)
-    SegCnt = 15
-
     video_file=HOMEVIDEOS+'/'+videoName+'.mp4'
     cap = cv2.VideoCapture(video_file)
+
+    if ratio == -1:
+        SegCnt = 15
+    else:
+        frame_num = ratio*cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        time_tot = frame_num/FPS
+        SegCnt = round(time_tot/float(TIME)/3.0)
+
     ana = hog_diff_dist(cap, FPS, TIME*SegCnt, SegCnt)
     summary:list[segment] = ana.getSimple(debug=True)
-    summary = ana.aestheticsChosen()
+    print(f"how much frames will be drop: {ana.drop_ratio} !!!!")
+    # summary = ana.aestheticsChosen()
 
     FrameSet = []
     for seg in summary:
@@ -61,7 +66,7 @@ if __name__ == "__main__":
 
     for name in videoNameList:
         print(f"-----{name}-----")
-        smp = fovlogSummary(name)
+        smp = fovlogSummary(name, ratio=0.15)
         print("simple")
         [f_measure,summary_length]=evaluateSummary(smp, name, HOMEDATA)
         print('F-measure : %.3f at length %.2f' % (f_measure, summary_length))

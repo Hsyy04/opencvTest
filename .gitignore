@@ -2,3 +2,5 @@ img/*
 video/*
 model/*
 summeData/*
+*.out
+__pycache__/*

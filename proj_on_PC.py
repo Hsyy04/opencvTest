@@ -1,16 +1,9 @@
 from concurrent.futures import thread
-from distutils.log import debug
-import enum
 from threading import Thread
-from turtle import color
-
-from transformers import TF_MODEL_FOR_SEQUENCE_CLASSIFICATION_MAPPING
 import cv2
 import random
 import time
 from matplotlib import pyplot as plt
-
-from paddle import save
 import numpy as np
 import math
 from tensorboard import summary
@@ -97,6 +90,8 @@ class hog_diff_dist:
         self.threshold = 0.0
         self.segmetLength = time/seg_cnt
         self.seg_cnt = seg_cnt
+        
+        self.drop_ratio = 0
 
     def HOG_diff_dist(self, now_segment:segment, usedDacy=False):
         if len(self.summary) < self.seg_cnt*3:
@@ -165,7 +160,8 @@ class hog_diff_dist:
             frame_gray = cv2.cvtColor(frame.copy(), cv2.COLOR_BGR2GRAY)
 
             if analyze_thread!=None and analyze_thread.is_alive():  # 如果还在计算，那么得不到这一帧
-                print(f"drop frame!{ana_cnt}---{cap.get(cv2.CAP_PROP_POS_FRAMES)}")
+                print(f"drop frame!{ana_cnt}---{self.cap.get(cv2.CAP_PROP_POS_FRAMES)}")
+                if debug:self.drop_ratio+=1
                 continue
             
             # 帧计数，以及换存
@@ -210,6 +206,7 @@ class hog_diff_dist:
             if frame_cnt % 1000 == 0 :
                 print(f"{frame_cnt}/{self.cap.get(cv2.CAP_PROP_FRAME_COUNT)}")
 
+        self.drop_ratio=float(self.drop_ratio)/float(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         return self.summary
 
     def aestheticsChosen(self):
