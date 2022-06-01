@@ -14,18 +14,18 @@ def get_simi(f1, f2):
 class Frame:
     def __init__(self, frame:cv2.Mat, idx=-1) -> None:
         self.frame = frame
-        self.clear_score = self.getClearFeature(frame)
+        # self.clear_score = self.getClearFeature(frame)
         # print(f"clear: {self.clear_score}")
         self.symmetry_score = self.getSymmetry(frame, 1)+self.getSymmetry(frame, 0)
         # print(f"symmetry:{self.symmetry_score}")
         # self.symmetry1_score = self.getSymmetry(frame, 1)
         # self.symmetry0_score = self.getSymmetry(frame, 0) 
-        self.hog = self.getHogFeature(frame)
+        # self.hog = self.getHogFeature(frame)
         self.color_score = self.getColor(frame)
         # print(f"color: {self.color_score}")
-        self.pos = 0            # For aesthetic：最终摘要中的第几帧
-        self.belongWhichSegment = 0         # For aesthetic: 属于第几个片段
-        self.raw_id = idx # 原始视频中的第几帧，用于实验评分
+        # self.pos = 0            # For aesthetic：最终摘要中的第几帧
+        # self.belongWhichSegment = 0         # For aesthetic: 属于第几个片段
+        # self.raw_id = idx # 原始视频中的第几帧，用于实验评分
 
     def getSymmetry(self, img:cv2.Mat, code:int):
         img_cal = cv2.resize(img,(270,480))
@@ -126,4 +126,99 @@ class segment:
     def hog_dist(self, obj):
         return cv2.norm(self.feature - obj.feature, 2)
     
+class FrameOrg:
+    def __init__(self, frame:cv2.Mat, idx=-1) -> None:
+        self.frame = frame
+        # self.clear_score = self.getClearFeature(frame)
+        # print(f"clear: {self.clear_score}")
+        self.symmetry_score = self.getSymmetry(frame, 1)+self.getSymmetry(frame, 0)
+        # print(f"symmetry:{self.symmetry_score}")
+        # self.symmetry1_score = self.getSymmetry(frame, 1)
+        # self.symmetry0_score = self.getSymmetry(frame, 0) 
+        # self.hog = self.getHogFeature(frame)
+        self.color_score = self.getColor(frame)
+        # print(f"color: {self.color_score}")
+        # self.pos = 0            # For aesthetic：最终摘要中的第几帧
+        # self.belongWhichSegment = 0         # For aesthetic: 属于第几个片段
+        # self.raw_id = idx # 原始视频中的第几帧，用于实验评分
 
+    def getSymmetry(self, img:cv2.Mat, code:int):
+        img_cal = img.copy()
+        # 创建对称图
+        img_flip_src = cv2.flip(img_cal,code)
+        # 将特征点对称
+        # 创建sift计算子
+        feature_point_size = 100
+        sift = cv2.SIFT_create(feature_point_size)
+
+        img_gray = cv2.cvtColor(img_cal, cv2.COLOR_BGR2GRAY)
+        img_flip_gray = cv2.cvtColor(img_flip_src, cv2.COLOR_BGR2GRAY)
+        # 获取该图像的特征点
+        sift_src=sift.detectAndCompute(img_gray,None)
+        sift_flip=sift.detectAndCompute(img_flip_gray,None)
+
+        avg_sc = 0.0
+        theta = 50.0
+        for src_id, src_p in enumerate(sift_src[0]):
+            x,y= src_p.pt[0], src_p.pt[1]
+            dist = []
+            simi = []
+            for flip_id, flip_p in enumerate(sift_flip[0]):
+                i,j = flip_p.pt[0], flip_p.pt[1]
+                dis = get_dist(x,y,i,j)
+                if dis <= theta:
+                    dist.append(dis)
+                    simi.append(get_simi(sift_src[1][src_id],sift_flip[1][flip_id]))
+            if len(dist) != 0:
+                dist = torch.log_softmax(torch.Tensor(dist),dim=0)
+                simi = torch.log(torch.Tensor(simi))
+                sc = torch.max(simi-dist)
+                avg_sc += sc/ float(feature_point_size)
+        return avg_sc
+
+    def getColor(self, img:cv2.Mat):
+        img_src = img.copy()
+        img_hsv = cv2.cvtColor(img_src,cv2.COLOR_BGR2HSV)
+        score = 0.0
+        cnt =0
+        for i,row in enumerate(img_hsv):
+            for j,pixel in enumerate(row):
+                cnt+=1
+                sc = (float(pixel[1])*0.5+float(pixel[2]))*0.5/255.0
+                score += sc*100.0
+        return score/(img.shape[0]*img.shape[1])
+
+    def getClearFeature(self, src):
+        cal_img = cv2.cvtColor(src, cv2.COLOR_RGB2GRAY)
+        canny = cv2.Canny(cal_img, 200, 200)
+        return canny.var()
+
+    def getHogFeature(self, img:cv2.Mat, winSize=(64,128), blockSize=(16,16), blockStride=(8,8), cellSize=(8,8), nbins=9):
+        hog = cv2.HOGDescriptor(winSize,blockSize,blockStride,cellSize,nbins)
+        cal_img = cv2.cvtColor(cv2.resize(img, winSize), cv2.COLOR_BGR2GRAY)
+        hist = hog.compute(cal_img)
+        return hist
+
+
+if __name__=="__main__":
+    import cv2
+    import os
+    from segment import FrameOrg,Frame
+    import matplotlib.pyplot as plt
+    import time
+    dir_path = "img\\neg"
+    picture_path = os.listdir(dir_path)
+    st = time.time()
+    score = []
+    for pic_file in picture_path:
+        img = cv2.imread(os.path.join(dir_path,pic_file))
+        frame = FrameOrg(img)
+    print(f"15张图片的计算时间（轻量化前）：{time.time()-st}s")
+
+    st = time.time()
+    score = []
+    for pic_file in picture_path:
+        img = cv2.imread(os.path.join(dir_path,pic_file))
+        frame = Frame(img)
+    print(f"15张图片的计算时间（轻量化前）：{time.time()-st}s")
+    
